@@ -17,7 +17,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head />
       <body>
-        <AblyClientProvider>{children}</AblyClientProvider>
+        <AblyClientProvider channelName="football-frenzy">{children}</AblyClientProvider>
       </body>
     </html>
   )

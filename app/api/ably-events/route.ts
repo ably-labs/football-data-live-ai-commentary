@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import * as Ably from 'ably';
 import { createInitialGameState, updateGameState, formatMatchEvent, type GameEvent, type GameState } from '@/lib/game-state';
+import { initializeCommentarySession, generateCommentary, resetCommentarySession } from '@/lib/openai-commentary';
 
 // Initialize Ably client
 let ablyClient: Ably.Realtime | null = null;
@@ -38,13 +39,69 @@ async function processCommentaryQueue() {
   pendingEvents = [];
   
   try {
-    // TODO: In Phase 2, we'll implement OpenAI commentary generation here
-    console.log('Would generate commentary for events:', eventsToProcess);
+    console.log('Generating commentary for events:', eventsToProcess.map(e => e.formatted));
     
-    // Simulate commentary generation time
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    const client = getAblyClient();
+    const commentaryChannel = client.channels.get('football-frenzy:commentary');
+    
+    // Publish commentary start event
+    await commentaryChannel.publish('start', {
+      eventCount: eventsToProcess.length,
+      timestamp: Date.now()
+    });
+    
+    // Generate commentary using OpenAI with retry logic
+    let retryCount = 0;
+    const maxRetries = 2;
+    let success = false;
+    
+    while (retryCount <= maxRetries && !success) {
+      try {
+        const commentaryStream = await generateCommentary(eventsToProcess);
+        
+        // Stream commentary chunks to Ably
+        let chunkCount = 0;
+        for await (const chunk of commentaryStream) {
+          await commentaryChannel.publish('chunk', {
+            text: chunk,
+            timestamp: Date.now(),
+            chunkIndex: chunkCount++
+          });
+        }
+        
+        success = true;
+        console.log('Commentary generation completed successfully');
+        
+        // Publish completion event
+        await commentaryChannel.publish('complete', {
+          totalChunks: chunkCount,
+          timestamp: Date.now()
+        });
+        
+      } catch (streamError) {
+        retryCount++;
+        console.error(`Error generating commentary (attempt ${retryCount}/${maxRetries + 1}):`, streamError);
+        
+        if (retryCount <= maxRetries) {
+          console.log('Retrying commentary generation...');
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        } else {
+          // Send error event to clients
+          await commentaryChannel.publish('error', {
+            message: 'Failed to generate commentary after multiple attempts',
+            timestamp: Date.now()
+          });
+          throw streamError;
+        }
+      }
+    }
     
     lastCommentaryTime = Date.now();
+  } catch (error) {
+    console.error('Error in commentary pipeline:', error);
+    // Re-queue events for next attempt
+    pendingEvents = [...eventsToProcess, ...pendingEvents];
   } finally {
     commentaryInProgress = false;
     // Check if new events arrived while processing
@@ -80,8 +137,14 @@ async function subscribeToEvents() {
         pendingEvents = [];
         commentaryInProgress = false;
         lastCommentaryTime = 0;
-        // TODO: In Phase 2, we'll clear OpenAI conversation here
+        resetCommentarySession();
         return;
+      }
+      
+      // Initialize commentary session on kickoff
+      if (event.type === 'game-status-update' && event.data.isGameActive === true && !oldState.isGameActive) {
+        console.log('Game starting - initializing commentary session');
+        await initializeCommentarySession();
       }
       
       // Format event for AI commentary if it's a relevant event
@@ -109,15 +172,32 @@ async function subscribeToEvents() {
   }
 }
 
-// Initialize subscription when module loads
-if (process.env.NODE_ENV === 'development') {
-  subscribeToEvents().catch(console.error);
+// Track initialization state
+let initializationPromise: Promise<void> | null = null;
+
+// Ensure subscription is initialized
+async function ensureSubscription() {
+  if (!isSubscribed && !initializationPromise) {
+    initializationPromise = subscribeToEvents()
+      .then(() => {
+        console.log('Ably subscription initialized successfully');
+      })
+      .catch((error) => {
+        console.error('Failed to initialize Ably subscription:', error);
+        initializationPromise = null; // Allow retry
+        throw error;
+      });
+  }
+  
+  if (initializationPromise) {
+    await initializationPromise;
+  }
 }
 
 export async function GET() {
   try {
     // Ensure we're subscribed
-    await subscribeToEvents();
+    await ensureSubscription();
     
     return NextResponse.json({
       status: 'subscribed',
