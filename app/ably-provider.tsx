@@ -12,9 +12,14 @@ export function AblyClientProvider({ children }: { children: ReactNode }) {
 
   const getClient = () => {
     if (!clientRef.current) {
+      const clientId = `user-${Math.random().toString(36).substring(2, 9)}`;
+      const authUrl = typeof window !== 'undefined' 
+        ? `${window.location.protocol}//${window.location.host}/api/ably-token?clientId=${clientId}`
+        : `/api/ably-token?clientId=${clientId}`;
+      
       clientRef.current = new Ably.Realtime({
-        key: process.env.NEXT_PUBLIC_ABLY_API_KEY,
-        clientId: `user-${Math.random().toString(36).substring(2, 9)}`,
+        authUrl: authUrl,
+        clientId: clientId,
       })
     }
     return clientRef.current

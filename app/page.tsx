@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useChannel, ChannelProvider, useAbly } from "ably/react"
-import type { Types } from "ably"
+import type { PresenceMessage } from "ably"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
@@ -15,7 +15,6 @@ import {
   Goal,
   RefreshCw,
   Play,
-  AlertTriangle,
   Users,
   Loader2,
   Ghost,
@@ -26,42 +25,6 @@ import { cn } from "@/lib/utils"
 const channelName = "football-frenzy"
 const GAME_DURATION_SECONDS = 120
 
-function ApiKeyInstructions() {
-  // ... (This component remains unchanged)
-  return (
-    <div className="bg-gray-900 text-white min-h-screen flex items-center justify-center p-8">
-      <Card className="bg-yellow-900/50 border-yellow-600 max-w-lg text-center">
-        <CardHeader>
-          <CardTitle className="text-2xl text-yellow-300 flex items-center justify-center gap-2">
-            <AlertTriangle /> Ably API Key Required
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p>To enable real-time features, you need to configure your Ably API key.</p>
-          <p>
-            1. Sign up for a free account at{" "}
-            <a href="https://ably.com" target="_blank" rel="noopener noreferrer" className="underline text-cyan-400">
-              ably.com
-            </a>
-            .
-          </p>
-          <p>2. Create a new app and copy your API key.</p>
-          <p>
-            3. Create a file named <code className="bg-gray-700 p-1 rounded">.env.local</code> in your project's root
-            directory.
-          </p>
-          <p>
-            4. Add your key to the file like this:
-            <pre className="bg-gray-800 p-2 rounded-md mt-2 text-left">
-              <code>NEXT_PUBLIC_ABLY_API_KEY="your-ably-api-key"</code>
-            </pre>
-          </p>
-          <p>5. Restart your development server.</p>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
 
 function PresenceIndicator({ count }: { count: number }) {
   if (count <= 1) {
@@ -94,7 +57,7 @@ function GlobalPresenceIndicator({
   members = [],
   clientId,
 }: {
-  members?: Types.PresenceMessage[]
+  members?: PresenceMessage[]
   clientId?: string
 }) {
   const MAX_AVATARS_SHOWN = 4
@@ -203,7 +166,7 @@ function GameDashboard() {
   const [isGameActive, setIsGameActive] = useState(false)
   const [gameHasStarted, setGameHasStarted] = useState(false)
   const [isHistoryLoaded, setIsHistoryLoaded] = useState(false)
-  const [presenceData, setPresenceData] = useState<Types.PresenceMessage[]>([])
+  const [presenceData, setPresenceData] = useState<PresenceMessage[]>([])
 
   const { channel } = useChannel(channelName, (message) => {
     processMessage(message)
@@ -268,7 +231,12 @@ function GameDashboard() {
       while (historyPage && historyPage.items.length > 0) {
         allMessages.push(...historyPage.items)
         if (historyPage.hasNext()) {
-          historyPage = await historyPage.next()
+          const nextPage = await historyPage.next()
+          if (nextPage) {
+            historyPage = nextPage
+          } else {
+            break
+          }
         } else {
           break
         }
@@ -611,9 +579,6 @@ function GameDashboard() {
 }
 
 export default function FiveASideFrenzyPage() {
-  if (!process.env.NEXT_PUBLIC_ABLY_API_KEY) {
-    return <ApiKeyInstructions />
-  }
   return (
     <ChannelProvider channelName={channelName}>
       <GameDashboard />
