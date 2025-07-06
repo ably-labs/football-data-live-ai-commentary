@@ -21,6 +21,7 @@ import {
 } from "lucide-react"
 import { type Player, type Commentary, initialPlayers, commentaryLines } from "@/app/game-data"
 import { cn } from "@/lib/utils"
+import { ServerInitializer } from './components/server-initializer'
 
 const channelName = "football-frenzy"
 const GAME_DURATION_SECONDS = 120
@@ -581,6 +582,7 @@ function GameDashboard() {
 export default function FiveASideFrenzyPage() {
   return (
     <ChannelProvider channelName={channelName}>
+      <ServerInitializer />
       <GameDashboard />
     </ChannelProvider>
   )

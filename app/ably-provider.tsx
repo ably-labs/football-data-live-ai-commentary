@@ -2,28 +2,30 @@
 
 import { AblyProvider } from "ably/react"
 import Ably from "ably"
-import { useRef, type ReactNode } from "react"
+import { useRef, useState, useEffect, type ReactNode } from "react"
 
 export function AblyClientProvider({ children }: { children: ReactNode }) {
-  // Use a ref to create and store the client instance.
-  // This ensures that the client is created only once per component instance (i.e., per tab),
-  // and it persists across re-renders, guaranteeing a unique clientId per session.
-  const clientRef = useRef<Ably.Realtime | null>(null)
+  const [client, setClient] = useState<Ably.Realtime | null>(null)
 
-  const getClient = () => {
-    if (!clientRef.current) {
+  useEffect(() => {
+    // Only create client on the client side
+    if (typeof window !== 'undefined') {
       const clientId = `user-${Math.random().toString(36).substring(2, 9)}`;
-      const authUrl = typeof window !== 'undefined' 
-        ? `${window.location.protocol}//${window.location.host}/api/ably-token?clientId=${clientId}`
-        : `/api/ably-token?clientId=${clientId}`;
-      
-      clientRef.current = new Ably.Realtime({
-        authUrl: authUrl,
+      const ablyClient = new Ably.Realtime({
+        authUrl: `${window.location.protocol}//${window.location.host}/api/ably-token?clientId=${clientId}`,
         clientId: clientId,
       })
+      setClient(ablyClient)
+      
+      return () => {
+        ablyClient.close()
+      }
     }
-    return clientRef.current
+  }, [])
+
+  if (!client) {
+    return <>{children}</> // Render children without Ably during SSR
   }
 
-  return <AblyProvider client={getClient()}>{children}</AblyProvider>
+  return <AblyProvider client={client}>{children}</AblyProvider>
 }

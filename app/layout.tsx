@@ -4,9 +4,8 @@ import "./globals.css"
 import { AblyClientProvider } from "./ably-provider"
 
 export const metadata: Metadata = {
-  title: "v0 App",
-  description: "Created with v0",
-  generator: "v0.dev",
+  title: "Football Frenzy - AI Commentary Demo",
+  description: "Real-time AI-powered football commentary using Ably and OpenAI",
 }
 
 export default function RootLayout({
