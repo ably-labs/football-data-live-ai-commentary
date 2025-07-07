@@ -1,4 +1,5 @@
 import { Player, Commentary, initialPlayers } from '@/app/game-data';
+import { GAME_DURATION_SECONDS } from './constants';
 
 export interface GameState {
   players: Player[];
@@ -10,7 +11,7 @@ export interface GameState {
 }
 
 export interface GameEvent {
-  type: 'player-stat-update' | 'score-update' | 'new-comment' | 'game-status-update' | 'reset';
+  type: 'player-stat-update' | 'score-update' | 'new-comment' | 'game-status-update' | 'time-update' | 'reset';
   data?: any;
 }
 
@@ -19,7 +20,7 @@ export function createInitialGameState(): GameState {
     players: [...initialPlayers],
     score: { home: 0, away: 0 },
     commentary: [],
-    timeLeft: 120, // 2 minutes in seconds
+    timeLeft: GAME_DURATION_SECONDS,
     isGameActive: false,
     gameHasStarted: false,
   };
@@ -32,10 +33,14 @@ export function updateGameState(state: GameState, event: GameEvent): GameState {
     case 'player-stat-update':
       const playerIndex = newState.players.findIndex(p => p.id === event.data.playerId);
       if (playerIndex !== -1) {
-        newState.players[playerIndex] = {
-          ...newState.players[playerIndex],
-          stats: event.data.stats,
-        };
+        // Support both 'stats' and 'newStats' field names for compatibility
+        const updatedStats = event.data.stats || event.data.newStats;
+        if (updatedStats) {
+          newState.players[playerIndex] = {
+            ...newState.players[playerIndex],
+            stats: updatedStats,
+          };
+        }
       }
       break;
 
@@ -59,6 +64,10 @@ export function updateGameState(state: GameState, event: GameEvent): GameState {
       }
       break;
 
+    case 'time-update':
+      newState.timeLeft = event.data.timeLeft;
+      break;
+
     case 'reset':
       return createInitialGameState();
 
@@ -71,23 +80,47 @@ export function updateGameState(state: GameState, event: GameEvent): GameState {
 
 export function formatMatchEvent(event: GameEvent, state: GameState): string {
   // Format events for AI commentary
-  const minute = Math.floor((120 - state.timeLeft) / 60);
+  const totalSeconds = GAME_DURATION_SECONDS - state.timeLeft;
+  const minute = Math.floor(totalSeconds / 60);
   
   switch (event.type) {
     case 'player-stat-update':
       const player = state.players.find(p => p.id === event.data.playerId);
       if (!player) return '';
       
-      const stat = event.data.statType;
-      const team = player.team;
+      // Get new stats directly from event
+      const newStats = event.data.stats || event.data.newStats;
+      if (!newStats) return '';
+      
+      // Determine what changed by looking at the stats
+      let eventType = '';
+      const oldPlayer = state.players.find(p => p.id === event.data.playerId);
+      if (oldPlayer && newStats) {
+        const oldStats = oldPlayer.stats;
+        console.log('[FormatEvent] Comparing stats:', {
+          playerId: event.data.playerId,
+          playerName: player.name,
+          oldStats,
+          newStats,
+          goalsChanged: newStats.goals > oldStats.goals,
+          yellowCardsChanged: newStats.yellowCards > oldStats.yellowCards,
+          redCardsChanged: newStats.redCards > oldStats.redCards,
+          assistsChanged: newStats.assists > oldStats.assists,
+          savesChanged: newStats.saves > oldStats.saves,
+        });
+        if (newStats.goals > oldStats.goals) eventType = 'goal';
+        else if (newStats.yellowCards > oldStats.yellowCards) eventType = 'yellow_card';
+        else if (newStats.redCards > oldStats.redCards) eventType = 'red_card';
+        else if (newStats.assists > oldStats.assists) eventType = 'assist';
+        else if (newStats.saves > oldStats.saves) eventType = 'save';
+      }
+      
+      if (!eventType) return '';
       
       return JSON.stringify({
-        type: stat === 'goals' ? 'goal' : 
-              stat === 'yellowCards' ? 'yellow_card' : 
-              stat === 'redCards' ? 'red_card' : 
-              stat === 'fouls' ? 'foul' : stat,
+        type: eventType,
         player: player.name,
-        team: team,
+        team: player.team || 'home',
         minute: minute,
       });
       
@@ -105,10 +138,11 @@ export function formatMatchEvent(event: GameEvent, state: GameState): string {
           minute: 0,
         });
       }
-      if (event.data.isGameActive === false && state.isGameActive) {
+      if (event.data.isGameActive === false && state.isGameActive && state.timeLeft === 0) {
         return JSON.stringify({
           type: 'fulltime',
           minute: minute,
+          finalScore: state.score,
         });
       }
       break;

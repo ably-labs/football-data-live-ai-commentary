@@ -5,7 +5,7 @@ import { useChannel, useAbly } from "ably/react"
 import type { PresenceMessage } from "ably"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import {
   Dribbble,
@@ -19,21 +19,29 @@ import {
   Loader2,
   Ghost,
 } from "lucide-react"
-import { type Player, type Commentary, initialPlayers, commentaryLines } from "@/app/game-data"
+import { type Player, initialPlayers } from "@/app/game-data"
 import { cn } from "@/lib/utils"
 import { ServerInitializer } from './components/server-initializer'
+import { AICommentary } from './components/ai-commentary'
+
+import { GAME_DURATION_SECONDS } from "@/lib/constants"
 
 const channelName = "football-frenzy"
-const GAME_DURATION_SECONDS = 120
 
 
 function PresenceIndicator({ count }: { count: number }) {
+  const [currentUrl, setCurrentUrl] = useState("/")
+  
+  useEffect(() => {
+    setCurrentUrl(window.location.href)
+  }, [])
+  
   if (count <= 1) {
     return (
       <p className="text-sm text-gray-400 text-center">
         It's just you here. Why not{" "}
         <a
-          href={typeof window !== "undefined" ? window.location.href : "/"}
+          href={currentUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="underline text-cyan-400"
@@ -63,6 +71,11 @@ function GlobalPresenceIndicator({
 }) {
   const MAX_AVATARS_SHOWN = 4
   const totalMembers = members.length
+  const [currentUrl, setCurrentUrl] = useState("/")
+  
+  useEffect(() => {
+    setCurrentUrl(window.location.href)
+  }, [])
 
   const avatarColors = [
     "#be123c", // Rose 700
@@ -92,7 +105,7 @@ function GlobalPresenceIndicator({
           <span className="text-sm text-gray-400 pr-1">Just you</span>
         </div>
         <a
-          href={typeof window !== "undefined" ? window.location.href : "/"}
+          href={currentUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="text-xs text-cyan-400 hover:underline"
@@ -162,12 +175,12 @@ function GameDashboard() {
   const client = useAbly()
   const [players, setPlayers] = useState<Player[]>(initialPlayers)
   const [score, setScore] = useState({ home: 0, away: 0 })
-  const [commentary, setCommentary] = useState<Commentary[]>([])
   const [timeLeft, setTimeLeft] = useState(GAME_DURATION_SECONDS)
   const [isGameActive, setIsGameActive] = useState(false)
   const [gameHasStarted, setGameHasStarted] = useState(false)
   const [isHistoryLoaded, setIsHistoryLoaded] = useState(false)
   const [presenceData, setPresenceData] = useState<PresenceMessage[]>([])
+  const [lastServerTimeUpdate, setLastServerTimeUpdate] = useState<number>(Date.now())
 
   const { channel } = useChannel(channelName, (message) => {
     processMessage(message)
@@ -204,13 +217,14 @@ function GameDashboard() {
       case "score-update":
         setScore(message.data)
         break
-      case "new-comment":
-        setCommentary((prev) => [message.data, ...prev].slice(0, 50))
-        break
       case "game-status-update":
         if (message.data.isGameActive) setGameHasStarted(true)
         setIsGameActive(message.data.isGameActive)
         setTimeLeft(message.data.timeLeft)
+        break
+      case "time-update":
+        setTimeLeft(message.data.timeLeft)
+        setLastServerTimeUpdate(Date.now())
         break
       case "reset":
         setPlayers(initialPlayers)
@@ -218,7 +232,6 @@ function GameDashboard() {
         setTimeLeft(GAME_DURATION_SECONDS)
         setIsGameActive(false)
         setGameHasStarted(false)
-        setCommentary([])
         break
     }
   }
@@ -245,7 +258,6 @@ function GameDashboard() {
 
       let tempPlayers = [...initialPlayers]
       let tempScore = { home: 0, away: 0 }
-      let tempCommentary: Commentary[] = []
       let tempTimeLeft = GAME_DURATION_SECONDS
       let tempIsGameActive = false
       let tempGameHasStarted = false
@@ -288,15 +300,11 @@ function GameDashboard() {
           case "score-update":
             tempScore = msg.data
             break
-          case "new-comment":
-            tempCommentary = [msg.data, ...tempCommentary]
-            break
         }
       })
 
       setPlayers(tempPlayers)
       setScore(tempScore)
-      setCommentary(tempCommentary.slice(0, 50))
       setTimeLeft(tempTimeLeft)
       setIsGameActive(tempIsGameActive)
       setGameHasStarted(tempGameHasStarted)
@@ -305,32 +313,27 @@ function GameDashboard() {
     loadHistory()
   }, [channel])
 
-  const publishCommentary = (commentatorName: "Barry Banter" | "Ronnie Roast", text: string) => {
-    const newComment: Commentary = {
-      commentator: commentatorName,
-      text,
-      avatar: commentatorName === "Barry Banter" ? "/images/barry-banter.png" : "/images/ronnie-roast.png",
-      timestamp: Date.now(),
-    }
-    channel.publish("new-comment", newComment)
-  }
 
+  // Client-side timer with server synchronization
   useEffect(() => {
-    let timer: NodeJS.Timeout
-    if (isGameActive && timeLeft > 0) {
-      timer = setInterval(() => setTimeLeft((prev) => prev - 1), 1000)
-    } else if (isGameActive && timeLeft <= 0) {
-      setIsGameActive(false)
-      publishCommentary("Barry Banter", "And that's the final whistle, folks! A hard-fought match from the legends.")
-      setTimeout(() => {
-        publishCommentary(
-          "Ronnie Roast",
-          `Final score is Inter Miami Pensioners ${score.home}, Inter YerNan ${score.away}. A classic for the ages.`,
-        )
-      }, 1500)
-    }
-    return () => clearInterval(timer)
-  }, [isGameActive, timeLeft, score.home, score.away])
+    if (!isGameActive || timeLeft <= 0) return
+
+    const interval = setInterval(() => {
+      setTimeLeft((prevTime) => {
+        // Never let it go below 0
+        const newTime = Math.max(0, prevTime - 1)
+        
+        // If we hit 0, stop the game
+        if (newTime === 0) {
+          setIsGameActive(false)
+        }
+        
+        return newTime
+      })
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [isGameActive, lastServerTimeUpdate]) // Re-sync when server updates
 
   const handleEvent = (playerId: number, event: keyof Player["stats"]) => {
     if (!isGameActive) return
@@ -338,36 +341,11 @@ function GameDashboard() {
     if (!player) return
     const newStats = { ...player.stats, [event]: player.stats[event] + 1 }
     channel.publish("player-stat-update", { playerId, newStats })
-    const commentator = Math.random() > 0.5 ? "Barry Banter" : "Ronnie Roast"
-    let lines: string[] = []
-    let homeGoal = false
-    switch (event) {
-      case "goals":
-        lines = commentaryLines.goal
-        const newScore = { ...score, home: score.home + 1 }
-        channel.publish("score-update", newScore)
-        homeGoal = true
-        break
-      case "assists":
-        lines = commentaryLines.assist
-        break
-      case "saves":
-        lines = commentaryLines.save
-        break
-      case "yellowCards":
-        lines = commentaryLines.yellowCard
-        break
-    }
-    const randomLine = lines[Math.floor(Math.random() * lines.length)].replace("{player}", player.name)
-    publishCommentary(commentator, randomLine)
-    if (homeGoal) {
-      const otherCommentator = commentator === "Barry Banter" ? "Ronnie Roast" : "Barry Banter"
-      const reactionLines = commentaryLines.goalReaction
-      const randomReaction = reactionLines[Math.floor(Math.random() * reactionLines.length)].replace(
-        "{player}",
-        player.name,
-      )
-      setTimeout(() => publishCommentary(otherCommentator, randomReaction), 1500)
+    
+    // Update score if it's a goal
+    if (event === "goals") {
+      const newScore = { ...score, home: score.home + 1 }
+      channel.publish("score-update", newScore)
     }
   }
 
@@ -375,8 +353,6 @@ function GameDashboard() {
     if (!isGameActive) return
     const newScore = { ...score, away: score.away + 1 }
     channel.publish("score-update", newScore)
-    publishCommentary("Ronnie Roast", "Oh dear, Inter YerNan have scored. Schmeichel was probably ordering a hotdog.")
-    publishCommentary("Barry Banter", "A momentary lapse in concentration for the legends!")
   }
 
   const resetGame = () => channel.publish("reset", {})
@@ -539,38 +515,13 @@ function GameDashboard() {
           </Card>
 
           <Card className="bg-gray-800/80 border-gray-600 text-white backdrop-blur-sm flex-grow flex flex-col min-h-0">
-            <CardHeader className="p-4 flex-shrink-0">
-              <CardTitle className="text-xl text-yellow-300 flex items-center gap-2">
+            <CardHeader className="p-3 py-2 flex-shrink-0">
+              <CardTitle className="text-lg text-yellow-300 flex items-center gap-2">
                 <Dribbble /> Live Commentary
               </CardTitle>
             </CardHeader>
             <CardContent className="flex-grow p-0 overflow-hidden">
-              <div className="h-full overflow-y-auto p-4 space-y-4">
-                {commentary.map((c) => (
-                  <div key={`${c.timestamp}-${c.commentator}`} className="flex items-start gap-3 animate-fade-in-up">
-                    <Avatar className="h-10 w-10 border-2 border-cyan-400 flex-shrink-0">
-                      <AvatarImage src={c.avatar || "/placeholder.svg"} />
-                      <AvatarFallback className="bg-gray-700 text-white">{c.commentator.substring(0, 2)}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-grow">
-                      <div className="flex justify-between items-baseline">
-                        <p
-                          className={cn(
-                            "font-bold",
-                            c.commentator === "Barry Banter" ? "text-cyan-300" : "text-orange-400",
-                          )}
-                        >
-                          {c.commentator}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {new Date(c.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </p>
-                      </div>
-                      <p className="text-sm text-gray-200">{c.text}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <AICommentary />
             </CardContent>
           </Card>
         </div>
