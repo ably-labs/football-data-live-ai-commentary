@@ -4,8 +4,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useAbly } from 'ably/react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import * as Ably from 'ably';
-const MAIN_CHANNEL = import.meta.env.VITE_MAIN_CHANNEL || 'football-frenzy:production:main';
-const COMMENTARY_CHANNEL = import.meta.env.VITE_COMMENTARY_CHANNEL || 'football-frenzy:production:commentary';
+
+// Use different channels for development vs production
+const isDevelopment = import.meta.env.DEV;
+const channelPrefix = isDevelopment ? 'development' : 'production';
+const MAIN_CHANNEL = import.meta.env.VITE_MAIN_CHANNEL || `football-frenzy:${channelPrefix}:main`;
+const COMMENTARY_CHANNEL = import.meta.env.VITE_COMMENTARY_CHANNEL || `football-frenzy:${channelPrefix}:commentary`;
 
 interface Commentary {
   id: string;
@@ -30,6 +34,8 @@ export function AICommentary() {
   useEffect(() => {
     const currentInstanceId = instanceId.current;
     console.log(`[AICommentary-${currentInstanceId}] Component mounted`);
+    console.log(`[AICommentary] Using channels:`, { MAIN_CHANNEL, COMMENTARY_CHANNEL });
+    console.log(`[AICommentary] Environment:`, isDevelopment ? 'development' : 'production');
     return () => {
       console.log(`[AICommentary-${currentInstanceId}] Component unmounted`);
     };
@@ -81,7 +87,7 @@ export function AICommentary() {
         const gameHistory = await gameChannel.history({ 
           limit: 100, 
           direction: 'backwards',
-          untilAttach: true
+          untilAttach: true  // This is valid: untilAttach works with backwards direction
         });
         let lastResetTime = 0;
         let lastGameStartTime = 0;
@@ -120,20 +126,31 @@ export function AICommentary() {
           console.log('[AICommentary] No reset or game start found, using last 2 minutes');
         }
         
-        // Load all pages of history
+        // Load all pages of history backwards from channel attach point
         const allMessages: Ably.Message[] = [];
-        console.log('[AICommentary] Loading commentary history from', new Date(startTime).toISOString(), 'to', new Date().toISOString());
+        console.log('[AICommentary] Loading commentary history backwards from attach point, filtering after', new Date(startTime).toISOString());
         let historyPage = await commentaryChannel.history({ 
-          start: startTime, 
-          end: Date.now(), 
-          direction: 'forwards',
-          untilAttach: true
+          limit: 100,
+          direction: 'backwards',
+          untilAttach: true  // Get all messages up to the attach point
         });
         
         while (historyPage) {
           if (historyPage.items.length > 0) {
-            allMessages.push(...historyPage.items);
-            console.log(`[AICommentary-${instanceId.current}] Loaded ${historyPage.items.length} messages from history page`);
+            // Filter messages that are after our startTime
+            const relevantMessages = historyPage.items.filter(msg => msg.timestamp >= startTime);
+            if (relevantMessages.length > 0) {
+              // Add to beginning since we're loading backwards
+              allMessages.unshift(...relevantMessages);
+              console.log(`[AICommentary-${instanceId.current}] Loaded ${relevantMessages.length} messages from history page`);
+            }
+            
+            // Stop if we've gone past our startTime
+            const oldestMessage = historyPage.items[historyPage.items.length - 1];
+            if (oldestMessage && oldestMessage.timestamp < startTime) {
+              console.log('[AICommentary] Reached messages before startTime, stopping history load');
+              break;
+            }
           }
           
           // Check if there are more pages
@@ -155,6 +172,7 @@ export function AICommentary() {
           // Group messages by commentary ID
           const commentaryGroups = new Map<string, Commentary>();
           
+          // First pass: create commentary entries from 'start' messages
           allMessages.forEach((message: Ably.Message) => {
             if (message.name === 'start') {
               // Use commentaryId if available (new format), otherwise fall back to timestamp
@@ -168,60 +186,70 @@ export function AICommentary() {
                 gameTime: message.data.gameTime || 120,
                 isComplete: false
               });
-            } else if (message.name === 'chunk' && message.data.text) {
-              // Use commentaryId for direct matching (new format)
+            }
+          });
+          
+          // Create structures to track chunks for each commentary
+          const chunksByCommentary = new Map<string, Array<{ index: number; text: string; gameTime?: number }>>();
+          
+          // Second pass: collect all chunks
+          allMessages.forEach((message: Ably.Message) => {
+            if (message.name === 'chunk' && message.data.text) {
               const targetCommentaryId = message.data?.commentaryId;
               
               if (targetCommentaryId && commentaryGroups.has(targetCommentaryId)) {
-                const commentary = commentaryGroups.get(targetCommentaryId)!;
-                commentary.text += message.data.text;
+                if (!chunksByCommentary.has(targetCommentaryId)) {
+                  chunksByCommentary.set(targetCommentaryId, []);
+                }
                 
-                // Mark this chunk as processed to avoid duplication when live messages arrive
+                chunksByCommentary.get(targetCommentaryId)!.push({
+                  index: message.data.chunkIndex ?? -1,
+                  text: message.data.text,
+                  gameTime: message.data.gameTime
+                });
+                
+                // Mark chunk as processed for live deduplication
                 if (message.data.chunkIndex !== undefined) {
                   const chunkKey = `${targetCommentaryId}-${message.data.chunkIndex}`;
                   processedChunks.current.add(chunkKey);
                 }
-                
-                // Use the chunk's game time if this is the first chunk
-                if (commentary.text === message.data.text && message.data.gameTime !== undefined) {
-                  commentary.gameTime = message.data.gameTime;
-                }
               } else if (!targetCommentaryId) {
-                // Legacy format - try to match by timestamp
-                const sortedIds = Array.from(commentaryGroups.keys())
-                  .map(id => ({ id, timestamp: parseInt(id.split('-')[1]) }))
-                  .sort((a, b) => b.timestamp - a.timestamp);
-                
-                for (const { id, timestamp } of sortedIds) {
-                  if (message.timestamp && timestamp <= message.timestamp) {
-                    const commentary = commentaryGroups.get(id);
-                    if (commentary) {
-                      commentary.text += message.data.text;
-                      break;
-                    }
-                  }
-                }
+                // Legacy format - skip these as they're unreliable
+                console.log('[AICommentary] Skipping legacy format chunk without commentaryId');
               }
             } else if (message.name === 'complete') {
-              // Use commentaryId for direct matching (new format)
               const targetCommentaryId = message.data?.commentaryId;
               
               if (targetCommentaryId && commentaryGroups.has(targetCommentaryId)) {
                 commentaryGroups.get(targetCommentaryId)!.isComplete = true;
               } else if (!targetCommentaryId) {
-                // Legacy format - mark the most recent incomplete commentary as complete
-                const sortedIds = Array.from(commentaryGroups.keys())
-                  .map(id => ({ id, timestamp: parseInt(id.split('-')[1]) }))
-                  .sort((a, b) => b.timestamp - a.timestamp);
-                
-                for (const { id } of sortedIds) {
-                  const commentary = commentaryGroups.get(id);
-                  if (commentary && !commentary.isComplete) {
-                    commentary.isComplete = true;
-                    break;
-                  }
-                }
+                // Legacy format - skip as unreliable
+                console.log('[AICommentary] Skipping legacy format complete message without commentaryId');
               }
+            }
+          });
+          
+          // Third pass: assemble chunks in order
+          chunksByCommentary.forEach((chunks, commentaryId) => {
+            const commentary = commentaryGroups.get(commentaryId);
+            if (!commentary) return;
+            
+            // Sort chunks by index
+            chunks.sort((a, b) => {
+              // If indices are available, use them
+              if (a.index >= 0 && b.index >= 0) {
+                return a.index - b.index;
+              }
+              // Otherwise, maintain original order
+              return 0;
+            });
+            
+            // Assemble text from sorted chunks
+            commentary.text = chunks.map(chunk => chunk.text).join('');
+            
+            // Use the first chunk's game time if available
+            if (chunks.length > 0 && chunks[0].gameTime !== undefined) {
+              commentary.gameTime = chunks[0].gameTime;
             }
           });
           

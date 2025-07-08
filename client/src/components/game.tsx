@@ -25,7 +25,10 @@ import { cn } from "@/lib/utils"
 import { AICommentary } from './ai-commentary'
 import { GAME_DURATION_SECONDS } from '../lib/constants'
 
-const MAIN_CHANNEL = import.meta.env.VITE_MAIN_CHANNEL || 'football-frenzy:production:main';
+// Use different channels for development vs production
+const isDevelopment = import.meta.env.DEV;
+const channelPrefix = isDevelopment ? 'development' : 'production';
+const MAIN_CHANNEL = import.meta.env.VITE_MAIN_CHANNEL || `football-frenzy:${channelPrefix}:main`;
 
 
 function PresenceIndicator({ count }: { count: number }) {
@@ -191,6 +194,7 @@ function GameDashboard() {
     if (!client) return
     
     console.log('Setting up channel:', MAIN_CHANNEL)
+    console.log('Environment:', isDevelopment ? 'development' : 'production')
     const ch = client.channels.get(MAIN_CHANNEL)
     setChannel(ch)
     

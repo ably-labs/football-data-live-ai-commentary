@@ -5,8 +5,11 @@ import { initializeCommentarySession, generateCommentary, resetCommentarySession
 // Constants
 const COMMENTARY_DEBOUNCE_DELAY = 4000; // 4 seconds - if events come within this window, batch them
 const MIN_COMMENTARY_INTERVAL = 0; // No minimum interval - process immediately
-const MAIN_CHANNEL = process.env.MAIN_CHANNEL || 'football-frenzy:production:main';
-const COMMENTARY_CHANNEL = process.env.COMMENTARY_CHANNEL || 'football-frenzy:production:commentary';
+
+// Use different channels for development vs production
+const channelPrefix = process.env.NODE_ENV === 'production' ? 'production' : 'development';
+const MAIN_CHANNEL = process.env.MAIN_CHANNEL || `football-frenzy:${channelPrefix}:main`;
+const COMMENTARY_CHANNEL = process.env.COMMENTARY_CHANNEL || `football-frenzy:${channelPrefix}:commentary`;
 
 // Singleton Ably client - this persists across requests
 let ablyClient: Ably.Realtime | null = null;
@@ -303,6 +306,7 @@ export async function initializeAblyService() {
   console.log('[Ably] Initializing Ably Realtime client...');
   console.log('[Ably] Environment:', process.env.NODE_ENV);
   console.log('[Ably] Node.js version:', process.version);
+  console.log('[Ably] Using channels:', { MAIN_CHANNEL, COMMENTARY_CHANNEL });
   
   try {
     // Create Ably client with proper configuration for Node.js
