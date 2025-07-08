@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAbly } from 'ably/react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import * as Ably from 'ably';
+import { MAIN_CHANNEL, COMMENTARY_CHANNEL } from '@/lib/constants';
 
 interface Commentary {
   id: string;
@@ -25,20 +27,21 @@ export function AICommentary() {
   const ably = useAbly();
   
   useEffect(() => {
-    console.log(`[AICommentary-${instanceId.current}] Component mounted`);
+    const currentInstanceId = instanceId.current;
+    console.log(`[AICommentary-${currentInstanceId}] Component mounted`);
     return () => {
-      console.log(`[AICommentary-${instanceId.current}] Component unmounted`);
+      console.log(`[AICommentary-${currentInstanceId}] Component unmounted`);
     };
   }, []);
 
   useEffect(() => {
     if (!ably) return;
 
-    const commentaryChannel = ably.channels.get('football-frenzy:commentary');
-    const gameChannel = ably.channels.get('football-frenzy');
+    const commentaryChannel = ably.channels.get(COMMENTARY_CHANNEL);
+    const gameChannel = ably.channels.get(MAIN_CHANNEL);
     
     // Subscribe to reset events to clear commentary
-    const handleResetMessage = (message: any) => {
+    const handleResetMessage = (message: Ably.Message) => {
       if (message.name === 'reset') {
         console.log('[AICommentary] Game reset detected - clearing commentary');
         setCommentary([]);
@@ -76,7 +79,7 @@ export function AICommentary() {
         const startTime = Math.max(lastResetTime, Date.now() - 2 * 60 * 1000);
         
         // Load all pages of history
-        const allMessages: any[] = [];
+        const allMessages: Ably.Message[] = [];
         let historyPage = await commentaryChannel.history({ start: startTime, end: Date.now(), direction: 'forwards' });
         
         while (historyPage) {
@@ -87,7 +90,12 @@ export function AICommentary() {
           
           // Check if there are more pages
           if (historyPage.hasNext()) {
-            historyPage = await historyPage.next();
+            const nextPage = await historyPage.next();
+            if (nextPage) {
+              historyPage = nextPage;
+            } else {
+              break;
+            }
           } else {
             break;
           }
@@ -99,7 +107,7 @@ export function AICommentary() {
           // Group messages by commentary ID
           const commentaryGroups = new Map<string, Commentary>();
           
-          allMessages.forEach((message: any) => {
+          allMessages.forEach((message: Ably.Message) => {
             if (message.name === 'start') {
               // Use commentaryId if available (new format), otherwise fall back to timestamp
               const id = message.data?.commentaryId || `commentary-${message.data?.timestamp || message.timestamp}`;
@@ -137,7 +145,7 @@ export function AICommentary() {
                   .sort((a, b) => b.timestamp - a.timestamp);
                 
                 for (const { id, timestamp } of sortedIds) {
-                  if (timestamp <= message.timestamp) {
+                  if (message.timestamp && timestamp <= message.timestamp) {
                     const commentary = commentaryGroups.get(id);
                     if (commentary) {
                       commentary.text += message.data.text;
@@ -194,7 +202,7 @@ export function AICommentary() {
     
     loadHistory();
     
-    const handleMessage = (message: any) => {
+    const handleMessage = (message: Ably.Message) => {
     const timestamp = Date.now();
     console.log(`[AICommentary-${instanceId.current}] Received message:`, message.name, 'at', timestamp, message.data);
     switch (message.name) {
@@ -327,11 +335,12 @@ export function AICommentary() {
     }
     };
 
-    console.log(`[AICommentary-${instanceId.current}] Subscribing to commentary channel`);
+    const currentInstanceId = instanceId.current;
+    console.log(`[AICommentary-${currentInstanceId}] Subscribing to commentary channel`);
     commentaryChannel.subscribe(handleMessage);
 
     return () => {
-      console.log(`[AICommentary-${instanceId.current}] Unsubscribing from channels`);
+      console.log(`[AICommentary-${currentInstanceId}] Unsubscribing from channels`);
       commentaryChannel.unsubscribe(handleMessage);
       gameChannel.unsubscribe('reset', handleResetMessage);
     };

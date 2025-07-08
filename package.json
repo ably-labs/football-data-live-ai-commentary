@@ -1,40 +1,18 @@
 {
-  "name": "football-data-live-ai-commentary",
-  "version": "0.1.0",
+  "name": "football-commentary-app",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
-  },
-  "dependencies": {
-    "@radix-ui/react-avatar": "^1.1.10",
-    "@radix-ui/react-separator": "^1.1.7",
-    "@radix-ui/react-slot": "^1.2.3",
-    "@types/jsonwebtoken": "^9.0.10",
-    "ably": "^2.10.0",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "dotenv": "^17.0.1",
-    "jsonwebtoken": "^9.0.2",
-    "lucide-react": "^0.525.0",
-    "next": "15.2.4",
-    "openai": "^5.8.2",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "tailwind-merge": "^3.3.1"
+    "dev": "concurrently -k -p \"[{name}]\" -n \"SERVER,CLIENT\" -c \"yellow.bold,cyan.bold\" \"pnpm run dev:server\" \"pnpm run dev:client\"",
+    "dev:server": "pnpm --filter football-commentary-server dev",
+    "dev:client": "pnpm --filter football-commentary-client dev",
+    "build": "pnpm run build:client && pnpm run build:server",
+    "build:server": "pnpm --filter football-commentary-server build",
+    "build:client": "pnpm --filter football-commentary-client build",
+    "start": "pnpm --filter football-commentary-server start"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3",
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "15.2.4",
-    "tailwindcss": "^4",
-    "tw-animate-css": "^1.3.5",
-    "typescript": "^5"
-  }
+    "concurrently": "^9.1.2"
+  },
+  "packageManager": "pnpm@10.6.5"
 }

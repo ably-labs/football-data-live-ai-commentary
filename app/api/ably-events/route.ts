@@ -1,16 +1,19 @@
 import { NextResponse } from 'next/server';
 import * as Ably from 'ably';
 import { createInitialGameState, updateGameState, formatMatchEvent, type GameEvent, type GameState } from '@/lib/game-state';
-import { initializeCommentarySession, generateCommentary, resetCommentarySession, getOpenAIClient } from '@/lib/openai-commentary';
-import { GAME_DURATION_SECONDS, COMMENTARY_DEBOUNCE_DELAY, MIN_COMMENTARY_INTERVAL } from '@/lib/constants';
+import { initializeCommentarySession, generateCommentary, resetCommentarySession } from '@/lib/openai-commentary';
+import { COMMENTARY_DEBOUNCE_DELAY, MIN_COMMENTARY_INTERVAL, MAIN_CHANNEL, COMMENTARY_CHANNEL } from '@/lib/constants';
 
-// Pre-initialize OpenAI client to reduce first-call latency
-getOpenAIClient();
+// OpenAI client will be initialized on first use when environment variables are available
 
 // Initialize Ably client
-let ablyClient: Ably.Realtime | null = null;
+let ablyRealtimeClient: Ably.Realtime | null = null;
 let gameState: GameState = createInitialGameState();
 let isSubscribed = false;
+
+// Log initialization
+console.log('[Init] ably-events/route.ts module loaded');
+console.log('[Init] Initial WebSocket status:', typeof global !== 'undefined' ? !!global.WebSocket : 'global undefined');
 
 // Commentary rate limiting and debouncing
 let commentaryInProgress = false;
@@ -27,15 +30,72 @@ let debounceTimer: NodeJS.Timeout | null = null;
 // Game timer management
 let gameTimerInterval: NodeJS.Timeout | null = null;
 
-function getAblyClient() {
-  if (!ablyClient) {
+async function getAblyRealtimeClient() {
+  console.log('[Ably] Getting Ably Realtime client...');
+  if (!ablyRealtimeClient) {
+    console.log('[Ably] No existing client, creating new one...');
+    
     const apiKey = process.env.ABLY_API_KEY;
     if (!apiKey) {
       throw new Error('ABLY_API_KEY not configured');
     }
-    ablyClient = new Ably.Realtime(apiKey);
+    
+    console.log('[Ably] Creating Ably.Realtime instance...');
+    console.log('[Ably] Environment:', process.env.NODE_ENV);
+    console.log('[Ably] Platform:', process.platform);
+    
+    try {
+      // For production environments, we need to handle WebSocket differently
+      // The ws package doesn't work well with Next.js production builds
+      // So we'll use Ably's built-in transport fallback mechanism
+      const options = {
+        key: apiKey,
+        // Configure for server environment
+        transportParams: {
+          heartbeatInterval: 15000
+        },
+        // Disable automatic recovery to avoid connection issues in server
+        closeOnUnload: false,
+        // Use environment-specific configuration
+        environment: process.env.ABLY_ENVIRONMENT,
+        // Enable fallback transports
+        disconnectedRetryTimeout: 15000,
+        suspendedRetryTimeout: 30000,
+        // Force xhr_polling transport to avoid WebSocket issues in production
+        // This is still real-time but doesn't require WebSocket
+        transports: ['xhr_polling']
+      };
+
+      console.log('[Ably] Using xhr_polling transport for server-side connection');
+      
+      ablyRealtimeClient = new Ably.Realtime(options);
+      console.log('[Ably] Ably.Realtime instance created successfully');
+      
+      // Log connection state changes
+      ablyRealtimeClient.connection.on('connected', () => {
+        console.log('[Ably] Connected successfully');
+      });
+      
+      ablyRealtimeClient.connection.on('failed', (stateChange) => {
+        console.error('[Ably] Connection failed:', stateChange);
+      });
+      
+      ablyRealtimeClient.connection.on('disconnected', (stateChange) => {
+        console.log('[Ably] Disconnected:', stateChange);
+      });
+      
+      // Add error handler
+      ablyRealtimeClient.connection.on('error', (error) => {
+        console.error('[Ably] Connection error:', error);
+      });
+    } catch (error) {
+      console.error('[Ably] Error creating Realtime client:', error);
+      throw error;
+    }
+  } else {
+    console.log('[Ably] Returning existing client');
   }
-  return ablyClient;
+  return ablyRealtimeClient;
 }
 
 async function processCommentaryQueue() {
@@ -66,8 +126,8 @@ async function processCommentaryQueue() {
   try {
     console.log('[Queue] Generating commentary for events:', eventsToProcess.map(e => e.formatted));
     
-    const client = getAblyClient();
-    const commentaryChannel = client.channels.get('football-frenzy:commentary');
+    const client = await getAblyRealtimeClient();
+    const commentaryChannel = client.channels.get(COMMENTARY_CHANNEL);
     console.log('[Queue] Got Ably client and commentary channel');
     
     // Generate unique commentary ID for this session
@@ -133,7 +193,7 @@ async function processCommentaryQueue() {
         } catch (iterError) {
           console.error('[Queue] Error iterating over commentary stream:', iterError);
           console.error('[Queue] Iteration error type:', iterError?.constructor?.name);
-          console.error('[Queue] Iteration error message:', (iterError as any)?.message);
+          console.error('[Queue] Iteration error message:', (iterError as Error)?.message);
           throw iterError;
         }
         
@@ -152,14 +212,15 @@ async function processCommentaryQueue() {
       } catch (streamError) {
         retryCount++;
         console.error(`[Queue] Error generating commentary (attempt ${retryCount}/${maxRetries + 1}):`, streamError);
-        console.error('[Queue] Error type:', (streamError as any)?.constructor?.name);
-        console.error('[Queue] Error stack:', (streamError as any)?.stack);
+        console.error('[Queue] Error type:', (streamError as Error)?.constructor?.name);
+        console.error('[Queue] Error stack:', (streamError as Error)?.stack);
         
         // Check if it's an OpenAI API error
-        if ((streamError as any)?.response) {
-          console.error('[Queue] OpenAI API Response:', (streamError as any).response);
-          console.error('[Queue] OpenAI Status:', (streamError as any).response?.status);
-          console.error('[Queue] OpenAI Headers:', (streamError as any).response?.headers);
+        const openAIError = streamError as { response?: { status?: number; headers?: Record<string, string> } };
+        if (openAIError?.response) {
+          console.error('[Queue] OpenAI API Response:', openAIError.response);
+          console.error('[Queue] OpenAI Status:', openAIError.response?.status);
+          console.error('[Queue] OpenAI Headers:', openAIError.response?.headers);
         }
         
         if (retryCount <= maxRetries) {
@@ -180,8 +241,8 @@ async function processCommentaryQueue() {
     lastCommentaryTime = Date.now();
   } catch (error) {
     console.error('[Queue] Error in commentary pipeline:', error);
-    console.error('[Queue] Error type:', (error as any)?.constructor?.name);
-    console.error('[Queue] Error stack:', (error as any)?.stack);
+    console.error('[Queue] Error type:', (error as Error)?.constructor?.name);
+    console.error('[Queue] Error stack:', (error as Error)?.stack);
     // Re-queue events for next attempt
     pendingEvents = [...eventsToProcess, ...pendingEvents];
   } finally {
@@ -197,8 +258,8 @@ async function subscribeToEvents() {
   if (isSubscribed) return;
   
   try {
-    const client = getAblyClient();
-    const channel = client.channels.get('football-frenzy');
+    const client = await getAblyRealtimeClient();
+    const channel = client.channels.get(MAIN_CHANNEL);
     
     // Subscribe to all game events
     channel.subscribe(async (message) => {
@@ -235,15 +296,15 @@ async function subscribeToEvents() {
         resetCommentarySession();
         
         // Publish a clear commentary event
-        const client = getAblyClient();
-        const commentaryChannel = client.channels.get('football-frenzy:commentary');
-        commentaryChannel.publish('clear', { timestamp: Date.now() });
+        const client = await getAblyRealtimeClient();
+        const commentaryChannel = client.channels.get(COMMENTARY_CHANNEL);
+        await commentaryChannel.publish('clear', { timestamp: Date.now() });
         
         return;
       }
       
       // Initialize commentary session on kickoff and start timer
-      if (event.type === 'game-status-update' && event.data.isGameActive === true && !oldState.isGameActive) {
+      if (event.type === 'game-status-update' && event.data && typeof event.data === 'object' && 'isGameActive' in event.data && event.data.isGameActive === true && !oldState.isGameActive) {
         console.log('Game starting - initializing commentary session');
         await initializeCommentarySession();
         // Reset lastCommentaryTime to ensure kickoff commentary triggers immediately
@@ -314,7 +375,7 @@ async function subscribeToEvents() {
       }
       
       // Stop timer on game end
-      if (event.type === 'game-status-update' && event.data.isGameActive === false) {
+      if (event.type === 'game-status-update' && event.data && typeof event.data === 'object' && 'isGameActive' in event.data && event.data.isGameActive === false) {
         if (gameTimerInterval) {
           clearInterval(gameTimerInterval);
           gameTimerInterval = null;
@@ -338,7 +399,7 @@ async function subscribeToEvents() {
         // Immediately signal that commentary is pending - this shows the cursor
         // Only send if we haven't already sent a pending signal
         if (!pendingSignalSent && !commentaryInProgress) {
-          const commentaryChannel = client.channels.get('football-frenzy:commentary');
+          const commentaryChannel = client.channels.get(COMMENTARY_CHANNEL);
           await commentaryChannel.publish('pending', {
             timestamp: Date.now(),
             gameTime: gameState.timeLeft
@@ -387,7 +448,7 @@ async function subscribeToEvents() {
     });
     
     isSubscribed = true;
-    console.log('Successfully subscribed to football-frenzy channel');
+    console.log(`Successfully subscribed to channel: ${MAIN_CHANNEL}`);
     
   } catch (error) {
     console.error('Error subscribing to events:', error);
@@ -419,6 +480,9 @@ async function ensureSubscription() {
 
 export async function GET() {
   console.log('[API] GET /api/ably-events called');
+  console.log(`[API] Channel configuration - Main: ${MAIN_CHANNEL}, Commentary: ${COMMENTARY_CHANNEL}`);
+  console.log('[API] Node version:', process.version);
+  console.log('[API] Environment:', process.env.NODE_ENV);
   try {
     // Ensure we're subscribed
     await ensureSubscription();

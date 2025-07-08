@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      # Add your environment variables here for testing
+      # - ABLY_API_KEY=your_test_key
+      # - OPEN_AI_API_KEY=your_test_key
+      # - JWT_SECRET=your_test_secret
+    env_file:
+      - .env.local
+    volumes:
+      # For development, you can mount the dist folders to see changes
+      # - ./server/dist:/app/server/dist
+      # - ./client/dist:/app/client/dist
+      - ./server/data:/app/server/data
+      - ./server/prompts:/app/server/prompts

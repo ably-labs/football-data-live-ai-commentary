@@ -34,18 +34,19 @@ export async function GET() {
   } catch (error) {
     console.error('[Test OpenAI] Error:', error);
     console.error('[Test OpenAI] Error type:', error?.constructor?.name);
-    console.error('[Test OpenAI] Error message:', (error as any)?.message);
+    console.error('[Test OpenAI] Error message:', (error as Error)?.message);
     console.error('[Test OpenAI] Full error:', JSON.stringify(error, null, 2));
     
     // Check for OpenAI specific errors
-    if ((error as any)?.response) {
-      console.error('[Test OpenAI] API Response Status:', (error as any).response?.status);
-      console.error('[Test OpenAI] API Response Data:', (error as any).response?.data);
+    const openAIError = error as { response?: { status?: number; data?: unknown } };
+    if (openAIError?.response) {
+      console.error('[Test OpenAI] API Response Status:', openAIError.response?.status);
+      console.error('[Test OpenAI] API Response Data:', openAIError.response?.data);
     }
     
     return NextResponse.json({
       success: false,
-      error: (error as any)?.message || 'Unknown error',
+      error: (error as Error)?.message || 'Unknown error',
       errorType: error?.constructor?.name,
       errorDetails: JSON.stringify(error, null, 2),
     }, { status: 500 });

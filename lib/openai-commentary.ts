@@ -9,6 +9,24 @@ let systemInstructions: string = '';
 let previousResponseId: string | null = null;
 
 // Type declaration for the Responses API since it's not in the official types yet
+interface ResponseEvent {
+  type?: string;
+  response?: {
+    id?: string;
+  };
+  delta?: {
+    content?: string;
+  } | string;
+  text?: string;
+  content?: string;
+  part?: unknown;
+}
+
+// Custom async iterable type for response stream
+interface ResponseStream {
+  [Symbol.asyncIterator](): AsyncIterator<ResponseEvent>;
+}
+
 interface ResponsesAPI {
   create(params: {
     model: string;
@@ -18,15 +36,23 @@ interface ResponsesAPI {
     temperature?: number;
     store?: boolean;
     previous_response_id?: string;
-  }): Promise<AsyncIterable<any>>;
+  }): Promise<ResponseStream>;
 }
 
-interface OpenAIWithResponses extends OpenAI {
+// Type augmentation for OpenAI client with Responses API
+type OpenAIWithResponses = OpenAI & {
   responses: ResponsesAPI;
-}
+};
 
 export function getOpenAIClient(): OpenAI {
   if (!openai) {
+    // Skip initialization during build phase
+    if (process.env.NODE_ENV === 'production' && !process.env.OPEN_AI_API_KEY && typeof window === 'undefined') {
+      console.log('[OpenAI] Skipping initialization during build phase');
+      // Return a dummy client that will be replaced at runtime
+      return {} as OpenAI;
+    }
+    
     const apiKey = process.env.OPEN_AI_API_KEY;
     console.log('[OpenAI] Initializing client, API key exists:', !!apiKey);
     console.log('[OpenAI] API key length:', apiKey?.length || 0);
@@ -152,7 +178,7 @@ export async function generateCommentary(events: CommentaryEvent[], firstEventRe
     
     // Add previous response ID if available
     if (previousResponseId) {
-      (requestParams as any).previous_response_id = previousResponseId;
+      (requestParams as { previous_response_id?: string }).previous_response_id = previousResponseId;
       console.log('[Commentary] Using previous_response_id for conversation state');
     }
     
@@ -181,7 +207,7 @@ export async function generateCommentary(events: CommentaryEvent[], firstEventRe
       let currentResponseId: string | null = null;
       
       try {
-        for await (const event of responseStream) {
+        for await (const event of responseStream as AsyncIterable<ResponseEvent>) {
           const chunkTime = Date.now() - streamStartTime;
           chunkCount++;
           
@@ -200,7 +226,7 @@ export async function generateCommentary(events: CommentaryEvent[], firstEventRe
           // Primary content extraction patterns for Responses API
           if (event.type === 'response.output_text.delta') {
             // This is the ACTUAL event type for streaming content from Responses API!
-            content = event.delta || '';
+            content = typeof event.delta === 'string' ? event.delta : (event.delta?.content || '');
             console.log('[Commentary] response.output_text.delta event, delta:', content);
           } else if (event.type === 'response.output_text.done') {
             // Final text event - don't yield this as we've already streamed the deltas

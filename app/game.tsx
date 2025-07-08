@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useChannel, useAbly } from "ably/react"
+import { useAbly } from "ably/react"
+import * as Ably from 'ably'
 import type { PresenceMessage } from "ably"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -23,10 +24,9 @@ import { type Player, initialPlayers } from "@/app/game-data"
 import { cn } from "@/lib/utils"
 import { ServerInitializer } from './components/server-initializer'
 import { AICommentary } from './components/ai-commentary'
+import { ChannelInfo } from './components/channel-info'
 
-import { GAME_DURATION_SECONDS } from "@/lib/constants"
-
-const channelName = "football-frenzy"
+import { GAME_DURATION_SECONDS, MAIN_CHANNEL } from "@/lib/constants"
 
 
 function PresenceIndicator({ count }: { count: number }) {
@@ -39,7 +39,7 @@ function PresenceIndicator({ count }: { count: number }) {
   if (count <= 1) {
     return (
       <p className="text-sm text-gray-400 text-center">
-        It's just you here. Why not{" "}
+        It&apos;s just you here. Why not{" "}
         <a
           href={currentUrl}
           target="_blank"
@@ -153,7 +153,7 @@ function StartGameModal({ onStart, presenceCount }: { onStart: () => void; prese
     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <Card className="bg-gray-800 border-gray-600 text-white max-w-md text-center animate-fade-in-up">
         <CardHeader>
-          <CardTitle className="text-2xl text-yellow-300">Welcome to Legends' League!</CardTitle>
+          <CardTitle className="text-2xl text-yellow-300">Welcome to Legends&apos; League!</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p>The stage is set for a 5-a-side clash of the titans!</p>
@@ -172,7 +172,10 @@ function StartGameModal({ onStart, presenceCount }: { onStart: () => void; prese
 }
 
 function GameDashboard() {
+  console.log('GameDashboard rendering')
   const client = useAbly()
+  console.log('Client:', client)
+  
   const [players, setPlayers] = useState<Player[]>(initialPlayers)
   const [score, setScore] = useState({ home: 0, away: 0 })
   const [timeLeft, setTimeLeft] = useState(GAME_DURATION_SECONDS)
@@ -182,9 +185,26 @@ function GameDashboard() {
   const [presenceData, setPresenceData] = useState<PresenceMessage[]>([])
   const [lastServerTimeUpdate, setLastServerTimeUpdate] = useState<number>(Date.now())
 
-  const { channel } = useChannel(channelName, (message) => {
-    processMessage(message)
-  })
+  // Try using channel without the hook
+  const [channel, setChannel] = useState<Ably.RealtimeChannel | null>(null)
+  
+  useEffect(() => {
+    if (!client) return
+    
+    console.log('Setting up channel:', MAIN_CHANNEL)
+    const ch = client.channels.get(MAIN_CHANNEL)
+    setChannel(ch)
+    
+    const messageHandler = (message: Ably.Message) => {
+      processMessage(message)
+    }
+    
+    ch.subscribe(messageHandler)
+    
+    return () => {
+      ch.unsubscribe(messageHandler)
+    }
+  }, [client])
 
   // Manual presence implementation
   useEffect(() => {
@@ -207,7 +227,7 @@ function GameDashboard() {
 
   const presenceCount = presenceData.length
 
-  const processMessage = (message: any) => {
+  const processMessage = (message: Ably.Message) => {
     switch (message.name) {
       case "player-stat-update":
         setPlayers((prev) =>
@@ -237,6 +257,8 @@ function GameDashboard() {
   }
 
   useEffect(() => {
+    if (!channel) return
+    
     const loadHistory = async () => {
       const twoMinutesAgo = Date.now() - 2 * 60 * 1000
       const allMessages = []
@@ -333,10 +355,10 @@ function GameDashboard() {
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [isGameActive, lastServerTimeUpdate]) // Re-sync when server updates
+  }, [isGameActive, lastServerTimeUpdate, timeLeft]) // Re-sync when server updates
 
   const handleEvent = (playerId: number, event: keyof Player["stats"]) => {
-    if (!isGameActive) return
+    if (!isGameActive || !channel) return
     const player = players.find((p) => p.id === playerId)
     if (!player) return
     const newStats = { ...player.stats, [event]: player.stats[event] + 1 }
@@ -350,18 +372,28 @@ function GameDashboard() {
   }
 
   const handleAwayGoal = () => {
-    if (!isGameActive) return
+    if (!isGameActive || !channel) return
     const newScore = { ...score, away: score.away + 1 }
     channel.publish("score-update", newScore)
   }
 
-  const resetGame = () => channel.publish("reset", {})
-  const startGame = () => channel.publish("game-status-update", { isGameActive: true, timeLeft: GAME_DURATION_SECONDS })
+  const resetGame = () => channel?.publish("reset", {})
+  const startGame = () => channel?.publish("game-status-update", { isGameActive: true, timeLeft: GAME_DURATION_SECONDS })
 
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+  }
+
+  // Early return if client is not ready
+  if (!client) {
+    return (
+      <div className="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-yellow-400" />
+        <p className="mt-4 text-lg">Connecting to server...</p>
+      </div>
+    )
   }
 
   if (!isHistoryLoaded) {
@@ -383,7 +415,7 @@ function GameDashboard() {
 
       <header className="text-center mb-6">
         <h1 className="text-5xl md:text-7xl font-extrabold tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-orange-400 to-red-500">
-          LEGENDS' LEAGUE
+          LEGENDS&apos; LEAGUE
         </h1>
         <p className="text-2xl text-cyan-300 font-bold tracking-wide">5-A-SIDE FRENZY</p>
       </header>
@@ -531,9 +563,11 @@ function GameDashboard() {
 }
 
 export default function FiveASideFrenzyPage() {
+  console.log('FiveASideFrenzyPage rendering')
   return (
     <>
       <ServerInitializer />
+      <ChannelInfo />
       <GameDashboard />
     </>
   )
