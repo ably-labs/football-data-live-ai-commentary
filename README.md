@@ -1,14 +1,78 @@
-# Football Data Live AI Commentary
+![Live AI Sports Commentary Demo](public/images/readme-banner.png)
 
-A real-time football match simulation with AI-powered commentary using Ably and OpenAI.
+# Live AI Sports Commentary Demo
 
-## Features
+Experience the future of sports broadcasting where AI-powered insights meet realtime delivery at scale. This demo showcases how modern realtime infrastructure like [Ably](https://ably.com) can transform static data into dynamic, engaging fan experiences.
 
-- Live 5-a-side football match simulation
-- Real-time multiplayer experience using Ably
-- AI-generated commentary powered by OpenAI GPT-4
-- Historical player data for contextual commentary
-- Streaming commentary with character-by-character display
+## 🚀 Why This Matters
+
+[The Premier League recently unlocked 30 years of match data](https://aimagazine.com/news/how-microsoft-is-powering-the-premier-league-with-ai). Microsoft and Copilot can now tell fans anything about players, clubs, or matches. But unless that information arrives **in the moment** - on mobile, on broadcast, in chat, at scale - it's just trivia.
+
+This demo shows what's possible when you combine:
+- **Rich historical data** (player stats, performance history)
+- **Low-latency AI processing** (OpenAI with streaming responses)
+- **Realtime delivery at scale** ([Ably's global edge network][https://ably.com/network])
+
+The result? AI commentators that react to live events within seconds, delivering contextual insights that reference player histories, team dynamics, and match statistics - all while showing the "thinking" process in realtime.
+
+## 🎯 What This Demo Shows
+
+Built in just a few hours, this proof of concept demonstrates:
+
+- **Sub-second event propagation** - Match events trigger AI commentary instantly
+- **Streaming AI responses** - See commentators "think" in realtime with live cursors
+- **Stateful conversations** - Commentary builds on previous events for natural flow
+- **Data-driven insights** - Every comment references actual player stats and history
+- **Scalable architecture** - Ready to handle millions of concurrent fans
+- **State synchronization** - Join mid-game and get the full context instantly
+
+## 🏗️ How It Works
+
+### The Stack
+
+- **Frontend**: React + TypeScript with Ably's realtime SDKs
+- **Backend**: Node.js server managing game state and AI orchestration
+- **AI**: OpenAI GPT-4 with custom prompts and streaming responses
+- **Realtime**: Ably for pub/sub messaging, presence, and state sync
+- **Data**: Pre-loaded player statistics and match history
+
+### Key Features
+
+1. **Live Game Simulation**
+   - Interactive 5-a-side football match
+   - Click to trigger events (goals, fouls, assists)
+   - Server-managed game timer and state
+
+2. **AI Commentary Pipeline**
+   - Events are batched intelligently (4-second window)
+   - OpenAI processes events with full game context
+   - Responses stream token-by-token to clients
+   - Commentary maintains conversation history
+
+3. **Realtime Architecture**
+   - Game state on `football-frenzy:main` channel
+   - Commentary on `football-frenzy:commentary` channel
+   - Automatic history replay on page refresh
+   - Presence tracking for connected fans
+
+## 🎨 The Experience
+
+Watch as Barry Banter and Ronnie Roast, our AI commentators, bring the game to life:
+
+- **Barry** provides play-by-play with statistical insights
+- **Ronnie** adds color commentary with personality
+- Both reference actual player data in their commentary
+- See them "think" with animated cursors before speaking
+
+## 💡 Why Ably?
+
+This demo leverages Ably's unique capabilities:
+
+- **Global Edge Network**: 635+ PoPs ensuring <65ms latency worldwide
+- **Guaranteed Ordering**: Commentary chunks arrive in sequence
+- **History API**: New viewers get full game context instantly
+- **Scalability**: From 10 to 10M fans without infrastructure changes
+- **Reliability**: 99.999% uptime SLA with automatic failover
 
 ## Prerequisites
 
@@ -16,12 +80,12 @@ A real-time football match simulation with AI-powered commentary using Ably and 
 - An [Ably account](https://ably.com) with an API key
 - An [OpenAI account](https://platform.openai.com) with an API key
 
-## Getting Started
+## 😦 Getting Started
 
 ### 1. Clone the repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/ably-labs/football-data-live-ai-commentary.git
 cd football-data-live-ai-commentary
 ```
 
@@ -67,39 +131,66 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-## How It Works
+## 📊 Sample Data
 
-1. **Game Events**: Players trigger events (goals, fouls, cards) through the web interface
-2. **Server Subscription**: A server-side Ably client subscribes to all game events
-3. **AI Commentary**: Events are sent to OpenAI with rich player context from the `/data` folder
-4. **Streaming Response**: AI-generated commentary is streamed back character-by-character
-5. **Real-time Distribution**: Commentary is published via Ably to all connected clients
+The AI commentators reference real player statistics loaded from [`server/data/players/`](server/data/players/). Each player has:
+- Career statistics (goals, assists, cards)
+- Playing style descriptions
+- Notable achievements
+- Personality traits for commentary flavor
 
-## Architecture
+Example player data files:
+- [Cristiano Ronaldo](server/data/cristiano_ronaldo.md)
+- [David Beckham](server/data/david_beckham.md)
+- [Steven Gerrard](server/data/steven_gerrard.md)
+- [Thierry Henry](server/data/thierry_henry.md)
+- [Peter Schmeichel](server/data/peter_schmeichel.md)
 
-- **Frontend**: Next.js with React and TypeScript
-- **Real-time Communication**: Ably Pub/Sub
-- **AI Commentary**: OpenAI GPT-4 with streaming responses
-- **Authentication**: JWT tokens generated server-side for Ably
-- **State Management**: Shared game state logic between client and server
+## 🧠 AI Prompts
 
-## Player Data
+The commentary system uses carefully crafted prompts to create engaging, contextual commentary. View the [commentary system prompt](prompts/commentary-system.md) to see how we:
+- Maintain commentator personalities
+- Reference player statistics naturally
+- React appropriately to different events
+- Keep commentary concise for realtime delivery
 
-The `/data` directory contains detailed markdown files for each player, including:
-- Career statistics
-- Playing style
-- Historical achievements
-- Trivia and controversies
-- Ready-made commentary lines
+## 🏛️ Architecture
 
-This data provides rich context for the AI to generate informed, entertaining commentary.
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Browser   │────▶│    Ably     │────▶│   Server    │
+│  (React)    │◀────│   Channels  │◀────│  (Node.js)  │
+└─────────────┘     └─────────────┘     └─────────────┘
+                           │                     │
+                           │                     ▼
+                           │              ┌─────────────┐
+                           │              │   OpenAI    │
+                           │              │ (Streaming) │
+                           │              └─────────────┘
+                           ▼
+                    ┌─────────────┐
+                    │  History &  │
+                    │    State    │
+                    └─────────────┘
+```
 
-## Development
+## 🚀 Taking This Further
 
-- The server automatically subscribes to game events on startup
-- Commentary generation is rate-limited to minimum 5-second gaps
-- Multiple rapid events are batched for coherent commentary
-- Game reset clears both game state and AI conversation history
+This demo is just the beginning. With Ably's platform, you could:
+
+- **Scale to millions**: Handle World Cup-level traffic
+- **Add more AI features**: Predictions, player comparisons, tactical analysis
+- **Integrate with broadcasts**: Sync commentary with live video
+- **Personalize experiences**: Team-specific commentary, language preferences
+- **Build interactive features**: Polls, predictions, shared reactions
+
+## 📚 Technical Documentation
+
+For deeper implementation details, see:
+- [Architecture Overview](docs/architecture.md)
+- [Realtime Event Flow](docs/event-flow.md)
+- [AI Integration Guide](docs/ai-integration.md)
+- [Scaling Considerations](docs/scaling.md)
 
 ## Troubleshooting
 
@@ -112,8 +203,21 @@ This data provides rich context for the AI to generate informed, entertaining co
 - Check that your Ably API key is correctly set in `.env.local`
 - Ensure the key has the necessary permissions for publishing and subscribing
 
-## Learn More
+## 🤝 About Ably
 
-- [Ably Documentation](https://ably.com/docs)
-- [OpenAI API Documentation](https://platform.openai.com/docs)
-- [Next.js Documentation](https://nextjs.org/docs)
+[Ably](https://ably.com) is the realtime experience infrastructure of the internet, used by developers to add live features to their apps. With 5+ years of 99.999% uptime and a global edge network, Ably delivers billions of messages to millions of users every day.
+
+Learn more about:
+- [Ably Pub/Sub](https://ably.com/pub-sub) - The foundation for realtime messaging
+- [Ably Chat](https://ably.com/chat) - Add live commentary and fan chat
+- [Four Pillars of Dependability](https://ably.com/four-pillars-of-dependability) - How Ably ensures reliability at scale
+
+## 📬 Get In Touch
+
+- **Questions?** Join our [Discord community](https://discord.gg/ably)
+- **Found a bug?** [Open an issue](https://github.com/ably-labs/football-data-live-ai-commentary/issues)
+- **Want to build something similar?** [Talk to our team](https://ably.com/contact)
+
+---
+
+*Built with ❤️ by the Ably team to showcase the art of the possible in realtime AI experiences.*
