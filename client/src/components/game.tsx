@@ -159,7 +159,7 @@ function StartGameModal({ onStart, presenceCount }: { onStart: () => void; prese
         </CardHeader>
         <CardContent className="space-y-4">
           <p>The stage is set for a 5-a-side clash of the titans!</p>
-          <p>Control the legends, trigger iconic moments, and watch the hilarious commentary unfold in real-time.</p>
+          <p>Control the legends, trigger iconic moments, and watch the hilarious commentary unfold in real time.</p>
           <PresenceIndicator count={presenceCount} />
         </CardContent>
         <CardFooter className="flex justify-center p-4">

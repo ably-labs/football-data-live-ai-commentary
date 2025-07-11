@@ -5,7 +5,7 @@ import { AblyClientProvider } from "./ably-provider"
 
 export const metadata: Metadata = {
   title: "Football Frenzy - AI Commentary Demo",
-  description: "Real-time AI-powered football commentary using Ably and OpenAI",
+  description: "Realtime AI-powered football commentary using Ably and OpenAI",
   icons: {
     icon: '/football-icon.svg',
     shortcut: '/football-icon.svg',

@@ -62,7 +62,7 @@ async function getAblyRealtimeClient() {
         disconnectedRetryTimeout: 15000,
         suspendedRetryTimeout: 30000,
         // Force xhr_polling transport to avoid WebSocket issues in production
-        // This is still real-time but doesn't require WebSocket
+        // This is still realtime but doesn't require WebSocket
         transports: ['xhr_polling']
       };
 
@@ -177,7 +177,7 @@ async function processCommentaryQueue() {
               isFirstChunk = false;
             }
             
-            // Don't await - fire and forget for real-time streaming
+            // Don't await - fire and forget for realtime streaming
             commentaryChannel.publish('chunk', {
               commentaryId,
               text: chunk,

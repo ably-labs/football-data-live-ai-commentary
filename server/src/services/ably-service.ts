@@ -79,7 +79,7 @@ async function processCommentaryQueue() {
         isFirstChunk = false;
       }
       
-      // Don't await - fire and forget for real-time streaming
+      // Don't await - fire and forget for realtime streaming
       commentaryChannel.publish('chunk', {
         commentaryId,
         text: chunk,

@@ -32,7 +32,7 @@ This document describes the technical architecture of the Live AI Sports Comment
 ### 4. AI Processing (OpenAI)
 - **Model**: GPT-4 (via Responses API)
 - **Features**:
-  - Streaming responses for real-time display
+  - Streaming responses for realtime display
   - Conversation history for context
   - Custom prompts with player data
 

@@ -13,14 +13,14 @@ This demo shows what's possible when you combine:
 - **Low-latency AI processing** (OpenAI with streaming responses)
 - **Realtime delivery at scale** ([Ably's global edge network][https://ably.com/network])
 
-The result? AI commentators that react to live events within seconds, delivering contextual insights that reference player histories, team dynamics, and match statistics - all while showing the "thinking" process in realtime.
+The result? AI commentators that react to live events within seconds, delivering contextual insights that reference player histories, team dynamics, and match statistics - all while showing the "thinking" process in real time.
 
 ## 🎯 What This Demo Shows
 
 Built in just a few hours, this proof of concept demonstrates:
 
 - **Sub-second event propagation** - Match events trigger AI commentary instantly
-- **Streaming AI responses** - See commentators "think" in realtime with live cursors
+- **Streaming AI responses** - See commentators "think" in real time with live cursors
 - **Stateful conversations** - Commentary builds on previous events for natural flow
 - **Data-driven insights** - Every comment references actual player stats and history
 - **Scalable architecture** - Ready to handle millions of concurrent fans
@@ -110,7 +110,7 @@ cp .env.example .env.local
 Edit `.env.local` and add your API keys:
 
 ```env
-# Ably API Key for real-time communication
+# Ably API Key for realtime communication
 ABLY_API_KEY=your-ably-api-key
 
 # OpenAI API Key for AI commentary generation
@@ -217,4 +217,4 @@ Learn more about:
 
 ---
 
-*Built with ❤️ by the Ably team to showcase the art of the possible in realtime AI experiences.*
+*Built with ❤️ by the Ably team to showcase the art of the possible in real time AI experiences.*

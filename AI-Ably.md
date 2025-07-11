@@ -1,13 +1,13 @@
 # AI-Powered Football Commentary with Ably
 
-This application is a proof of concept demonstrating real-time AI-generated football commentary using OpenAI's GPT models and Ably's real-time messaging platform. The system generates dynamic, contextual, and humorous commentary based on live match events while leveraging historical player data.
+This application is a proof of concept demonstrating realtime AI-generated football commentary using OpenAI's GPT models and Ably's realtime messaging platform. The system generates dynamic, contextual, and humorous commentary based on live match events while leveraging historical player data.
 
 ## Architecture Overview
 
 ### System Components
 
 1. **Client Applications (Web/Mobile)**
-   - Subscribe to real-time commentary updates via Ably channels
+   - Subscribe to realtime commentary updates via Ably channels
    - Trigger match events (goals, fouls, cards, etc.)
    - Display streaming commentary as it's generated
 
