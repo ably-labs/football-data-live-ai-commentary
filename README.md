@@ -188,9 +188,6 @@ This demo is just the beginning. With Ably's platform, you could:
 
 For deeper implementation details, see:
 - [Architecture Overview](docs/architecture.md)
-- [Realtime Event Flow](docs/event-flow.md)
-- [AI Integration Guide](docs/ai-integration.md)
-- [Scaling Considerations](docs/scaling.md)
 
 ## Troubleshooting
 
